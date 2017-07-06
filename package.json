@@ -1,0 +1,17 @@
+{
+  "name": "make-n-brake",
+  "version": "1.0.0",
+  "description": "Automates the process of digitizing with MakeMKV, encoding with Handbrake, and uploading to an online movies directory",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Joseph Yoo",
+  "license": "ISC",
+  "dependencies": {
+    "handbrake-js": "^2.2.2",
+    "mkdirp": "^0.5.1",
+    "path": "^0.12.7"
+  }
+}
