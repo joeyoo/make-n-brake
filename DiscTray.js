@@ -1,13 +1,16 @@
-function DiscTray(childProcess) {
+function DiscTray(childProcess, events, state) {
 	this.childProcess = childProcess;
-	this.trayIsEmpty = this.checkForDisc;
+	this.trayIsEmpty = true;
+	this.events = events;
+	this.state = state;
 }
 
 DiscTray.prototype.checkForDisc = function() {
 	var check = this.childProcess.spawn('drutil', ['discinfo']);
+	var tray = this;
 
 	check.stdout.on('data', function(data) {
-		return /Please insert a disc to get disc info/.test(data);
+		tray.trayIsEmpty = /Please insert a disc to get disc info/.test(data);
 	});
 };
 
@@ -22,15 +25,20 @@ DiscTray.prototype.pollForDisc = function() {
 	tray.checkForDisc();
 
 	setTimeout(function() {
-		return setInterval(function() {
+		var that = this;
+		tray.checkForDisc();
+		setInterval(function() {
 			if (tray.trayIsEmpty) {
 				console.log("TRAY IS EMPTY");
 			}
 			else {
 				clearInterval(this);
+				clearTimeout(that);
 				console.log("TRAY IS NOT EMPTY");	
+				tray.events.emit('trayLoaded', state);
+				return state;
 			}
-			tray.checkForDisc();
+			
 		}, 2000);
 	}, 2000);
 

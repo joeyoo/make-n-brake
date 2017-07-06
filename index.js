@@ -4,8 +4,13 @@ var os = require('os'),
 	path = require('path'),
 	childProcess = require('child_process'),
 	readline = require('readline'),
+	EventEmitter = require('events'),
 	DiscTray = require('./DiscTray.js'),
-	MakeMKV = require('./makemkv.js');
+	MakeMKV = require('./makemkv.js'),
+	Events = new EventEmitter(),
+	CLI = readline.createInterface({input: process.stdin, output: process.stdout });
+
+CLI.on('line', handleReservedInputs);
 
 var INITIAL_STATE = {
 	fileQueue: [],
@@ -13,6 +18,10 @@ var INITIAL_STATE = {
 	encoding: false,
 	currentlyMaking: '',
 	currentlyEncoding: '',
+
+	discTray: {
+		isLoaded: false
+	},
 
 	projectInfo: {
 		provided: false,
@@ -23,27 +32,69 @@ var INITIAL_STATE = {
 	}
 }
 
-loadState(INITIAL_STATE).then(function(state_0) { console.log("state_0 =", state_0);
-	CLI = readline.createInterface({input: process.stdin, output: process.stdout });
-	tray = new DiscTray(childProcess);
-	makemkv = new MakeMKV(childProcess);
+	// Events.on('trayLoaded', function(state) {
+	// 	state.discTray.isLoaded = true;
+	// })
 
-	CLI.on('line', handleReservedInputs);
+	// Events.on('ejectTray', function(tray) {
+	// 	tray.pollForDisc();
+	// });
+
+loadState(INITIAL_STATE).then(function(state_0) { console.log("state_0 =", state_0);
+	// var tray = new DiscTray(childProcess, Events),
+	// 	makemkv = new MakeMKV(childProcess);
 
 	setProjectInfo(state_0).then(function(state_1) { console.log("state_1 =", state_1);
 
 		createOrFindProjectDir(state_1).then(function(state_2) { console.log("state_2 =", state_2);
 
-			tray.pollForDisc();
+			ensureTrayIsLoaded(state_2).then(function(state_3) { console.log("state_3 =", state_3);
+				// prompt user for disc num
+				// makemkv
+					// - put in mkv dir
+					// - rename w/ disc num
+				// handbrake
+					// - put in mp4 dir
+
+			});
+
+			// poll for disc until loaded
+
+
+			// tray.pollForDisc();
 
 		});
 	});
 });
 
+function ensureTrayIsLoaded(state, childProcess) {
+	return new Promise(function(resolve,reject) {
 
+		setTimeout(function() {
+			state = checkForDisc(state);
+			setInterval(function() {
+				if (state.discTray.isLoaded) {
+					clearInterval(this);
+					clearTimeout(that);
+					resolve(state);
+				}
+				else { console.log("TRAY IS EMPTY");
+					state = checkForDisc(state);
+				}
+				
+			}, 2000);
+		}, 2000);
+	});
+}
 
+function checkForDisc(state) {
+	var checker = childProcess.spawn('drutil', ['discinfo']);
 
-
+	checker.stdout.on('data', function(data) {
+		state.discTray.isLoaded = !/Please insert a disc to get disc info/.test(data);
+		return state;
+	})
+}
 
 
 function renameMKV(args) {
@@ -94,9 +145,9 @@ function handleReservedInputs(input) {
 };
 
 
-function setProjectInfo(initialState) { 
+function setProjectInfo(state_0) { 
 	return new Promise(function(resolve, reject) {
-		var state = initialState;
+		var state = state_0;
 
 		CLI.question('Project Name (i.e. SeniorVideos):\n> ', function(name) {
 			state.projectInfo.name = name;
@@ -142,5 +193,11 @@ function loadState(state) {
 		resolve(state);
 	})
 };
+
+// function getFileInfo() {
+// 	CLI.question('Disc Number (i.e. 001):\n> ', function(discNum) {
+
+// 	})
+// }
 
 
