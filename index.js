@@ -5,10 +5,13 @@ var os = require('os'),
 	childProcess = require('child_process'),
 	readline = require('readline'),
 	EventEmitter = require('events'),
-	DiscTray = require('./DiscTray.js'),
-	MakeMKV = require('./makemkv.js'),
+	DiscTray = require('./modules/DiscTray.js'),
+	MakeMKV = require('./modules/MakeMKV.js'),
+	State = require('./modules/State.js'),
 	Events = new EventEmitter(),
-	CLI = readline.createInterface({input: process.stdin, output: process.stdout });
+	CLI = readline.createInterface({input: process.stdin, output: process.stdout }),
+	tray = new DiscTray(childProcess),
+	makemkv = new MakeMKV(childProcess);
 
 CLI.on('line', handleReservedInputs);
 
@@ -20,7 +23,8 @@ var INITIAL_STATE = {
 	currentlyEncoding: '',
 
 	discTray: {
-		isLoaded: false
+		isLoaded: false, 
+		polling: false
 	},
 
 	projectInfo: {
@@ -32,67 +36,105 @@ var INITIAL_STATE = {
 	}
 }
 
-	// Events.on('trayLoaded', function(state) {
-	// 	state.discTray.isLoaded = true;
-	// })
 
-	// Events.on('ejectTray', function(tray) {
-	// 	tray.pollForDisc();
-	// });
 
 loadState(INITIAL_STATE).then(function(state_0) { console.log("state_0 =", state_0);
-	// var tray = new DiscTray(childProcess, Events),
-	// 	makemkv = new MakeMKV(childProcess);
 
 	setProjectInfo(state_0).then(function(state_1) { console.log("state_1 =", state_1);
 
 		createOrFindProjectDir(state_1).then(function(state_2) { console.log("state_2 =", state_2);
 
-			ensureTrayIsLoaded(state_2).then(function(state_3) { console.log("state_3 =", state_3);
-				// prompt user for disc num
-				// makemkv
-					// - put in mkv dir
-					// - rename w/ disc num
-				// handbrake
-					// - put in mp4 dir
+				var state = new State(state_2, EventEmitter);
 
-			});
+				Events.on('madeMKV', function() {
+					// eject tray
+					// getDiscNum()
+					handbrake().then(function() {
+						Events.emit('encoded');
+					})
+				})
 
-			// poll for disc until loaded
+				Events.on('gotDiscNum', function(discNum) {
+					makemkv.mkv(discNum).then(function() {
+						Events.emit('madeMKV');
+					})
+				})
 
+				Events.on('trayLoaded', function(store) {
+					store.discTray.isLoaded = true;
 
-			// tray.pollForDisc();
+					state.emitter.emit('state', store);
+
+					// getDiscNum().then(function(discNum) {
+					// 	Events.emit('gotDiscNum', discNum);
+					// })
+				})
+
+				Events.on('ejectTray', function(store) {
+					tray.eject(); store.discTray.isLoaded = false;
+
+					tray.pollForDisc().then(function(loaded){
+						store.discTray.polling = true;
+
+						if (loaded) { 
+							store.discTray.polling = false;
+							Events.emit('trayLoaded', store);
+						};
+					})
+				})
+
+			Events.emit("ejectTray", state.store);
 
 		});
 	});
 });
 
-function ensureTrayIsLoaded(state, childProcess) {
+function getDiscNum() {
+	return new Promise(function(resolve,reject) {
+		CLI.question('Disc Num:\n>', function(num) {
+			var prepend = "";
+			for (var i = num.length; i < 3; i++) {
+				prepend += "0";
+			};
+			num = prepend + num;
+			resolve(num);
+		});
+	});
+
+};
+
+function ensureTrayIsLoaded(state) {
 	return new Promise(function(resolve,reject) {
 
 		setTimeout(function() {
-			state = checkForDisc(state);
-			setInterval(function() {
-				if (state.discTray.isLoaded) {
-					clearInterval(this);
-					clearTimeout(that);
-					resolve(state);
-				}
-				else { console.log("TRAY IS EMPTY");
-					state = checkForDisc(state);
-				}
-				
-			}, 2000);
+			var that = this;
+			checkForDisc(state).then(function(newState){
+				setInterval(function() {
+					if (newState.discTray.isLoaded) {
+						clearInterval(this);
+						clearTimeout(that);
+						resolve(newState);
+					}
+					else { console.log("TRAY IS EMPTY");
+						checkForDisc(newState).then(function(newerState){
+							resolve(newerState);
+						})
+					}
+					
+				}, 2000);
+			})
 		}, 2000);
 	});
 }
 
 function checkForDisc(state) {
-	var checker = childProcess.spawn('drutil', ['discinfo']);
+	return new Promise(function(resolve,reject) {
+		var checker = childProcess.spawn('drutil', ['discinfo']);
 
-	checker.stdout.on('data', function(data) {
-		state.discTray.isLoaded = !/Please insert a disc to get disc info/.test(data);
-		return state;
+		checker.stdout.on('data', function(data) {
+			state.discTray.isLoaded = !/Please insert a disc to get disc info/.test(data);
+			resolve(state);
+		})
 	})
 }
 
@@ -114,8 +156,8 @@ function renameMKV(args) {
 
 }
 
-function mkvPath() {
-	return path.resolve(os.homedir(), 'Desktop/OnlineMovies', APP.dirName);
+function mkvPath(state) {
+	return path.resolve(os.homedir(), 'Desktop/OnlineMovies', state.projectInfo.dirName, 'MKV');
 }
 
 function makeMKV(pathName) {
@@ -140,8 +182,9 @@ function makeMKV(pathName) {
 function handleReservedInputs(input) {
 	input = input.trim();
 
-	if (input=="eject") {tray.ejectTray()};
-	if (input=="quit") {CLI.close()};
+	if (input=="eject") {tray.eject()}
+	else if (input=="quit") {CLI.close()}
+	else if (input=="close") {tray.close()}
 };
 
 
@@ -193,11 +236,5 @@ function loadState(state) {
 		resolve(state);
 	})
 };
-
-// function getFileInfo() {
-// 	CLI.question('Disc Number (i.e. 001):\n> ', function(discNum) {
-
-// 	})
-// }
 
 

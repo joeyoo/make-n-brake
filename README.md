@@ -1,6 +1,9 @@
 # Make N' Brake
 ## Tool that helps automate Media Production's DVD -> MKV -> MP4 digization process, which uses MakeMKV and Handbrake
 
+## TODO:
+1. input handler functions in ```handleReservedInputs()``` should emit from ```Events``` emitter and not from ```tray```
+
 ## USER WORKFLOW:
 
 1. Project Setup - User is prompted to enter project details:
